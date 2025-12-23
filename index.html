@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Merry Christmas!</title>
+<meta name="description" content="An interactive pixel-art Christmas card featuring Snoopy and Woodstock.">
+
+<style>
+    /* CSS VARIABLES & RESET */
+    :root {
+        --bg-color: #2c3e50;
+        --card-bg: #87CEEB;
+        --text-color: #333;
+        --ui-bg: #fff;
+    }
+
+    * { box-sizing: border-box; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+
+    body {
+        margin: 0; padding: 0;
+        background-color: var(--bg-color);
+        font-family: 'Courier New', Courier, monospace;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        min-height: 100vh;
+        color: white;
+    }
+
+    h1, p { text-align: center; margin: 10px 0; }
+
+    /* MAIN CONTAINER */
+    #game-container {
+        position: relative;
+        width: 100%;
+        max-width: 500px;
+        aspect-ratio: 4/5;
+        background-color: var(--card-bg);
+        border: 4px solid #fff;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        overflow: hidden;
+        margin: 10px;
+        image-rendering: pixelated;
+    }
+
+    canvas { display: block; width: 100%; height: 100%; }
+
+    /* UI LAYERS */
+    #ui-layer {
+        position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+        pointer-events: none;
+    }
+
+    .interactive-element {
+        position: absolute;
+        pointer-events: auto;
+        cursor: pointer;
+        border: 2px dashed rgba(255,255,255,0.3);
+        background: rgba(255,255,255,0.1);
+        border-radius: 50%;
+        transition: background 0.2s;
+    }
+
+    .interactive-element:hover { background: rgba(255, 255, 0, 0.3); }
+    .interactive-element:focus-visible {
+        border: 2px dashed #ff0;
+        outline: 2px solid #000;
+        background-color: rgba(255, 255, 255, 0.4);
+    }
+
+    /* HUD & CONTROLS */
+    .hud {
+        position: absolute; top: 10px; right: 10px;
+        display: flex; gap: 5px; pointer-events: auto;
+    }
+
+    .btn {
+        background: #fff; border: 2px solid #000; padding: 5px 10px;
+        font-family: inherit; font-weight: bold; cursor: pointer;
+        font-size: 0.8rem; box-shadow: 2px 2px 0px #000; color: #000;
+    }
+    .btn:active { transform: translate(2px, 2px); box-shadow: none; }
+
+    /* PALETTE BAR */
+    #palette {
+        position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);
+        background: rgba(255,255,255,0.9);
+        border: 2px solid #000;
+        padding: 5px;
+        display: flex; gap: 10px;
+        border-radius: 8px;
+        pointer-events: auto;
+    }
+
+    .palette-item {
+        width: 44px; height: 44px;
+        border: 2px solid #ccc;
+        position: relative;
+        background-color: #eee;
+        display: flex; justify-content: center; align-items: center;
+        cursor: pointer;
+    }
+
+    .palette-item.selected {
+        border-color: #d32f2f; background-color: #ffcccc;
+        box-shadow: 0 0 5px red;
+    }
+
+    .palette-item canvas { width: 80%; height: 80%; object-fit: contain; }
+
+    /* MODALS */
+    .modal {
+        position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(0,0,0,0.85);
+        display: flex; flex-direction: column;
+        justify-content: center; align-items: center;
+        padding: 20px; text-align: center;
+        z-index: 100; color: #fff;
+        opacity: 0; pointer-events: none; transition: opacity 0.5s;
+    }
+
+    .modal.active { opacity: 1; pointer-events: auto; }
+
+    .modal-content {
+        background: #fff; color: #000; padding: 20px;
+        border: 4px solid #000; max-width: 90%;
+        box-shadow: 8px 8px 0 #333;
+    }
+
+    .pixel-text { font-size: 0.75rem; line-height: 1.5; margin-bottom: 20px; white-space: pre-wrap; }
+
+    #start-screen { background: var(--card-bg); color: #000; }
+    .instruction-text { font-size: 0.9rem; margin-bottom: 15px; color: #555; }
+
+    .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); }
+</style>
+</head>
+<body>
+
+<header>
+    <p class="sr-only">An interactive pixel art game. Help Snoopy and Woodstock decorate the tree to reveal a message.</p>
+</header>
+
+<div id="game-container" role="application" aria-label="Christmas Card Game">
+    <canvas id="game-canvas" width="320" height="400"></canvas>
+    
+    <div id="ui-layer"></div>
+
+    <div class="hud">
+        <button class="btn" id="btn-sound" aria-label="Toggle Sound">Sound: Off</button>
+        <button class="btn" id="btn-reset" aria-label="Reset Card">Reset</button>
+        <button class="btn" id="btn-help" aria-label="How to Play">?</button>
+    </div>
+
+    <div id="palette" role="radiogroup" aria-label="Decoration Selector"></div>
+
+    <div id="start-screen" class="modal active">
+        <div class="modal-content">
+            <h2>Help Snoopy & Woodstock!</h2>
+            <p>The tree looks bare.</p>
+            <p>Can you help them decorate it?</p>
+            <p class="instruction-text">
+                1. Select a decoration.<br>
+                2. Tap a circle on the tree to place it.<br>
+                3. Fill the tree for a surprise!
+            </p>
+            <button class="btn" id="btn-start" style="font-size:1.2rem; padding: 10px 20px;">Start Decorating</button>
+        </div>
+    </div>
+
+    <div id="win-screen" class="modal">
+        <div class="modal-content">
+            <h2 style="color:#d32f2f;">Merry Christmas!</h2>
+            <div id="final-message" class="pixel-text"></div>
+            <div style="margin-top: 10px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+                <button class="btn" id="btn-save-png">Save Photo</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div aria-live="polite" id="live-region" class="sr-only"></div>
+
+<script>
+
+const YOUR_MESSAGE = 'Edit your message here!'
+
+
+// CONFIG
+const CANVAS_W = 320;
+const CANVAS_H = 400;
+const TOTAL_SLOTS = 17;
+const WIN_THRESHOLD = 17;
+const SNOOPY_SCALE = 0.8;
+const WOODSTOCK_SCALE = 0.4;
+
+// STATE MANAGEMENT
+const state = {
+    started: false,
+    won: false,
+    decorations: [], // {id, type}
+    selectedType: 0,
+    soundOn: false
+};
+
+// ASSETS (SPRITES)
+ const PALETTE_COLORS = [
+
+null,
+'#ffffff', // 1: White
+'#000000', // 2: Black
+'#d32f2f', // 3: Red
+'#2e7d32', // 4: Green
+'#fdd835' // 5: Gold
+]; 
+
+const SPRITES = {
+    snoopyIdle: [
+        "....22222........",
+        "...2111112.......",
+        "..211111112......", 
+        ".2221111111222...",
+        ".22221111211112..", 
+        "22222211121111122",
+        "22222211111111122",
+        "2222221111111112.",
+        "222222111111112..",
+        "22222211111122...",
+        ".2222.211222.....",
+        "..22...333.......",
+        "......21112......",
+        "......212112.....",
+        "......212112.....",
+        ".....21121112....",
+        ".....21121112....",
+        "......2211112....",
+        ".....2211112.....",
+        "....2111112......",
+        ".....22212.......",
+        "......211122.....",
+        ".....21111112....",
+        ".....22222222...."
+    ],
+    snoopyHappy: [
+        "....22222..........",
+        "...2111112.........",
+        "..211111112........", 
+        ".2221111111222.....",
+        ".22221111211112....", 
+        "22222211121111122..",
+        "22222211111111122..",
+        "2222221111111112...",
+        "222222111111112....",
+        "22222211211122.....",
+        ".2222.211222.......",
+        "..22...333....44544",
+        "......21112...44544",
+        "......2111122255555",
+        "......211111..44544",
+        "......2111112224544",
+        "......2111112......",
+        "......2211112......",
+        ".....2211112.......",
+        "....2111112........",
+        ".....22212.........",
+        "......211122.......",
+        ".....21111112......",
+        ".....22222222......"
+    ],
+    woodstockIdle: [
+        ".........2......",
+        "........5255....",
+        "......25525552..",
+        ".......2525552..",
+        "......2255552...",
+        ".....2255552....",
+        ".22225555552....",
+        "255555255555222.",
+        "2555552555555552",
+        "25555555555555.2",
+        ".2225555555525..",
+        "...22555555522..",
+        "....22522225.2..",
+        ".....252........",
+        "....252.........",
+        "....2552........",
+        "...22552........",
+        "....2252...22...",
+        "....2222225552..",
+        "....222..22552..",
+        ".222222.....22..",
+        "..22552222......"
+    ],
+    woodstockHappy: [
+        "............2.......",
+        "......225..2...22...",
+        ".....2..25.25.2.....",
+        "........2552552.....",
+        "........2552552.....",
+        ".......2555552......",
+        "......25555552....22",
+        "...2225555555522225.",
+        ".22555555555555555..",
+        "255552552555555555..",
+        "2552255552255552255.",
+        "2555555555555555522.",
+        "25555555555555255552",
+        "252555555552555255..",
+        ".2522555522555552...",
+        "..225222255555552...",
+        "....22255552225..2..",
+        ".......2552...2.....",
+        ".......2552.........",
+        ".2222.255552.2222...",
+        "255552555555255552..",
+        ".2225255555525222...",
+        ".2552255555522552...",
+        "..222.25555252222...",
+        "......252252255552..",
+        "....22252252225552..",
+        "...25552555552222...",
+        "....2222222222......"
+    ],
+    baubleRed: ["..33..",".3333.",".3333.","..33.."],
+    baubleGold: ["..55..",".5555.",".5555.","..55.."],
+    candyCane: [".311.","33111","13.31","11.33","...13","...11", "...31", "...33"],
+    star: ["..5..",".555.","55555",".555.","5.5.5"]
+};
+
+const DECORATION_TYPES = [
+    { name: "Red Bauble", sprite: 'baubleRed' },
+    { name: "Gold Bauble", sprite: 'baubleGold' },
+    { name: "Candy Cane", sprite: 'candyCane' },
+    { name: "Star", sprite: 'star' }
+];
+
+// Tree Slot Coordinates
+const SLOT_COORDS = [
+    {x: 0.50, y: 0.20}, 
+    {x: 0.35, y: 0.40}, {x: 0.65, y: 0.40},
+    {x: 0.50, y: 0.45},
+    {x: 0.25, y: 0.55}, {x: 0.42, y: 0.55}, {x: 0.58, y: 0.55}, {x: 0.725, y: 0.55},
+    {x: 0.35, y: 0.65}, {x: 0.65, y: 0.65},
+    {x: 0.225, y: 0.725}, {x: 0.50, y: 0.725}, {x: 0.775, y: 0.725},
+    {x: 0.20, y: 0.825}, {x: 0.40, y: 0.825}, {x: 0.60, y: 0.825}, {x: 0.80, y: 0.825}
+];
+
+// INITIALISE
+const canvas = document.getElementById('game-canvas');
+const ctx = canvas.getContext('2d', { alpha: false });
+const uiLayer = document.getElementById('ui-layer');
+const paletteContainer = document.getElementById('palette');
+const liveRegion = document.getElementById('live-region');
+let audioCtx = null;
+
+const assets = {};
+
+function init() {
+    // 1. Set Message
+    document.getElementById('final-message').textContent = YOUR_MESSAGE;
+
+    // 2. Load Assets
+    ['snoopyIdle', 'snoopyHappy', 'woodstockIdle', 'woodstockHappy', 'baubleRed', 'baubleGold', 'candyCane', 'star'].forEach(k => {
+        let s = k.includes('snoopy') || k.includes('woodstock') ? 4 : 3; 
+        assets[k] = preRenderSprite(k, s);
+    });
+    // Generate tree
+    assets.tree = renderProceduralTree();
+
+    // 3. UI Generation
+    createPalette();
+    createSlots();
+    
+    // 4. Start
+    requestAnimationFrame(gameLoop);
+    
+    // 5. Listeners
+    document.getElementById('btn-start').addEventListener('click', startGame);
+    document.getElementById('btn-reset').addEventListener('click', resetGame);
+    document.getElementById('btn-sound').addEventListener('click', toggleSound);
+    document.getElementById('btn-help').addEventListener('click', () => {
+        document.getElementById('start-screen').classList.add('active');
+    });
+    document.getElementById('btn-save-png').addEventListener('click', savePNG);
+}
+
+// RENDERING
+function preRenderSprite(key, scale = 1) {
+    const data = SPRITES[key];
+    if (!data) return null;
+    const h = data.length;
+    const w = data[0].length;
+    const c = document.createElement('canvas');
+    c.width = w * scale;
+    c.height = h * scale;
+    const cx = c.getContext('2d');
+    
+    for(let y=0; y<h; y++) {
+        for(let x=0; x<w; x++) {
+            const char = data[y][x];
+            const colorIdx = parseInt(char);
+            if (!isNaN(colorIdx) && PALETTE_COLORS[colorIdx]) {
+                cx.fillStyle = PALETTE_COLORS[colorIdx];
+                cx.fillRect(x*scale, y*scale, scale, scale);
+            }
+        }
+    }
+    return c;
+}
+
+function renderProceduralTree() {
+    const c = document.createElement('canvas');
+    const w = 240;
+    const h = 320;
+    c.width = w;
+    c.height = h;
+    const cx = c.getContext('2d');
+    const pixelSize = 4;
+
+    // Trunk
+    cx.fillStyle = "#5d4037";
+    cx.fillRect((w/2) - 16, h - 50, 32, 50);
+
+    // Tree Layers
+    function drawJaggedTriangle(centerX, topY, width, height) {
+        for (let y = 0; y < height; y += pixelSize) {
+            let progress = y / height;
+            let currentW = (width * progress);
+            let startX = centerX - (currentW / 2);
+            let qX = Math.floor(startX / pixelSize) * pixelSize;
+            let qW = Math.floor(currentW / pixelSize) * pixelSize;
+            let qY = topY + y;
+
+            if (qW > 0) {
+                cx.fillStyle = "#1b5e20"; // Dark Green Base
+                cx.fillRect(qX, qY, qW, pixelSize);
+                // Texture
+                for(let k=0; k<qW; k+=pixelSize) {
+                    if (Math.random() > 0.8) {
+                        cx.fillStyle = "#2e7d32"; // Light Green
+                        cx.fillRect(qX+k, qY, pixelSize, pixelSize);
+                    }
+                }
+            }
+        }
+    }
+
+    drawJaggedTriangle(w/2, 20, 100, 80);  // Top
+    drawJaggedTriangle(w/2, 60, 160, 100); // Mid
+    drawJaggedTriangle(w/2, 110, 220, 120); // Bottom
+    drawJaggedTriangle(w/2, 160, 240, 110); // Base
+
+    return c;
+}
+
+// GAME LOOP
+let frame = 0;
+function gameLoop() {
+    frame++;
+    ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
+
+    // Sky
+    ctx.fillStyle = "#87CEEB";
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+    // Snow Floor
+    ctx.fillStyle = "#fff";
+    ctx.beginPath();
+    ctx.ellipse(CANVAS_W/2, CANVAS_H, CANVAS_W/1.2, 80, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Tree
+    if(assets.tree) {
+        ctx.drawImage(assets.tree, (CANVAS_W - assets.tree.width)/2, 60);
+    }
+
+    // Decorations
+    state.decorations.forEach(d => {
+        const slot = SLOT_COORDS[d.id];
+        const cx = slot.x * CANVAS_W;
+        const cy = slot.y * CANVAS_H;
+        
+        const type = DECORATION_TYPES[d.type];
+        const img = assets[type.sprite];
+        if (img) {
+            ctx.drawImage(img, cx - img.width/2, cy - img.height/2);
+        }
+    });
+
+    // Characters (Animated)
+    const isWin = state.won;
+    const snoopyImg = isWin && (Math.floor(frame/30)%3===0) ? assets.snoopyHappy : assets.snoopyIdle;
+    const woodstockImg = isWin && (Math.floor(frame/30)%3!==0) ? assets.woodstockHappy : assets.woodstockIdle;
+
+    const bounce = isWin ? Math.sin(frame * 0.05) * 5 : 0;
+    const groundY = CANVAS_H - 120;
+
+    if (snoopyImg) {
+        const dW = snoopyImg.width * SNOOPY_SCALE;
+        const dH = snoopyImg.height * SNOOPY_SCALE;
+        const yOffset = snoopyImg.height - dH;
+        ctx.drawImage(snoopyImg, 1, groundY - bounce + yOffset, dW, dH);
+    }
+
+    if (woodstockImg) {
+        const dW = woodstockImg.width * WOODSTOCK_SCALE;
+        const dH = woodstockImg.height * WOODSTOCK_SCALE;
+        const yOffset = woodstockImg.height - dH;
+        ctx.drawImage(woodstockImg, CANVAS_W - 20 - dW, groundY - bounce + yOffset - 20, dW, dH);
+    }
+
+    // Particles
+    drawSnow();
+    if (state.won) drawConfetti();
+
+    requestAnimationFrame(gameLoop);
+}
+
+// LOGIC
+function startGame() {
+    document.getElementById('start-screen').classList.remove('active');
+    state.started = true;
+    initAudio();
+}
+
+function createPalette() {
+    paletteContainer.innerHTML = '';
+    DECORATION_TYPES.forEach((d, index) => {
+        const btn = document.createElement('div');
+        btn.className = `palette-item ${index === 0 ? 'selected' : ''}`;
+        btn.role = 'radio';
+        btn.ariaLabel = `Select ${d.name}`;
+        
+        const iconC = document.createElement('canvas');
+        const src = assets[d.sprite];
+        if(src) {
+            iconC.width = src.width;
+            iconC.height = src.height;
+            iconC.getContext('2d').drawImage(src, 0, 0);
+            btn.appendChild(iconC);
+        }
+
+        const select = () => {
+            state.selectedType = index;
+            document.querySelectorAll('.palette-item').forEach(b => b.classList.remove('selected'));
+            btn.classList.add('selected');
+        };
+
+        btn.addEventListener('click', select);
+        paletteContainer.appendChild(btn);
+    });
+}
+
+function createSlots() {
+    uiLayer.innerHTML = '';
+    SLOT_COORDS.forEach((coord, index) => {
+        const btn = document.createElement('div');
+        btn.className = 'interactive-element';
+        
+        btn.style.left = `calc(${coord.x * 100}% - 20px)`; 
+        btn.style.top = `calc(${coord.y * 100}% - 20px)`;
+        btn.style.width = '40px';
+        btn.style.height = '40px';
+        btn.ariaLabel = `Tree Slot ${index + 1}`;
+        
+        btn.addEventListener('click', () => handleSlotClick(index));
+        uiLayer.appendChild(btn);
+    });
+}
+
+function handleSlotClick(index) {
+    if (!state.started || state.won) return;
+
+    const existingIdx = state.decorations.findIndex(d => d.id === index);
+    
+    if (existingIdx >= 0) {
+        state.decorations.splice(existingIdx, 1);
+        playSound('remove');
+    } else {
+        state.decorations.push({
+            id: index,
+            type: state.selectedType
+        });
+        playSound('place');
+    }
+    
+    checkWinCondition();
+}
+
+function checkWinCondition() {
+    if (state.decorations.length >= WIN_THRESHOLD && !state.won) {
+        state.won = true;
+        playSound('win');
+        setTimeout(() => {
+            document.getElementById('win-screen').classList.add('active');
+        }, 1500);
+    }
+}
+
+function resetGame() {
+    state.decorations = [];
+    state.won = false;
+    document.getElementById('win-screen').classList.remove('active');
+}
+
+// PARTICLES
+const snowflakes = Array(50).fill(0).map(() => ({
+    x: Math.random() * CANVAS_W,
+    y: Math.random() * CANVAS_H,
+    speed: 0.5 + Math.random()
+}));
+
+function drawSnow() {
+    ctx.fillStyle = "rgba(255,255,255,0.6)";
+    snowflakes.forEach(f => {
+        f.y += f.speed;
+        if (f.y > CANVAS_H) f.y = 0;
+        ctx.fillRect(f.x, f.y, 2, 2);
+    });
+}
+
+const confetti = [];
+function drawConfetti() {
+    if (confetti.length < 50) {
+        confetti.push({
+            x: CANVAS_W/2, y: CANVAS_H/2, 
+            vx: (Math.random()-0.5)*10, vy: (Math.random()-1)*10,
+            color: PALETTE_COLORS[Math.floor(Math.random()*5)+3]
+        });
+    }
+    confetti.forEach((p, i) => {
+        p.x += p.vx; p.y += p.vy; p.vy += 0.2;
+        ctx.fillStyle = p.color;
+        ctx.fillRect(p.x, p.y, 4, 4);
+        if(p.y > CANVAS_H) confetti.splice(i, 1);
+    });
+}
+
+// AUDIO
+function initAudio() {
+    if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if(audioCtx.state === 'suspended') audioCtx.resume();
+}
+function toggleSound() {
+    state.soundOn = !state.soundOn;
+    document.getElementById('btn-sound').textContent = state.soundOn ? "Sound: On" : "Sound: Off";
+    if(state.soundOn) initAudio();
+}
+function playSound(type) {
+    if(!state.soundOn || !audioCtx) return;
+    const osc = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    osc.connect(g); g.connect(audioCtx.destination);
+    const now = audioCtx.currentTime;
+    
+    if(type === 'place') {
+        osc.type = 'sine'; osc.frequency.setValueAtTime(800, now);
+        osc.frequency.exponentialRampToValueAtTime(300, now+0.1);
+        g.gain.setValueAtTime(0.1, now); g.gain.linearRampToValueAtTime(0, now+0.1);
+        osc.start(now); osc.stop(now+0.1);
+    } else if(type === 'remove') {
+        osc.type = 'triangle'; osc.frequency.setValueAtTime(200, now);
+        osc.frequency.linearRampToValueAtTime(100, now+0.1);
+        g.gain.setValueAtTime(0.1, now); g.gain.linearRampToValueAtTime(0, now+0.1);
+        osc.start(now); osc.stop(now+0.1);
+    } else if(type === 'win') {
+        [440, 554, 659].forEach((f,i) => {
+            const o = audioCtx.createOscillator();
+            const gn = audioCtx.createGain();
+            o.connect(gn); gn.connect(audioCtx.destination);
+            o.frequency.value = f;
+            gn.gain.setValueAtTime(0.05, now + i*0.1);
+            gn.gain.linearRampToValueAtTime(0, now + 1.5);
+            o.start(now + i*0.1); o.stop(now + 1.5);
+        });
+    }
+}
+
+function savePNG() {
+    const link = document.createElement('a');
+    link.download = 'pixel-christmas.png';
+    link.href = canvas.toDataURL();
+    link.click();
+}
+
+window.onload = init;
+</script>
+</body>
+</html>
