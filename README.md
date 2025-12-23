@@ -1,4 +1,4 @@
-# Snoopy’s Festive Pixel Decorator
+# Snoopy-themed Christmas Card
 
 An interactive, browser-based Christmas experience featuring Peanuts-inspired pixel art. This project demonstrates efficient canvas rendering, state-driven UI, and procedural asset generation within a single HTML file.
 
